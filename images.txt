@@ -7,7 +7,6 @@
 --platform=linux/amd64 rabbitmq:3.9.18-management
 --platform=linux/amd64 gcc
 --platform=linux/amd64 node
---platform=linux/amd64 cmake
 --platform=linux/amd64 kylemanna/openvpn
 --platform=linux/amd64 openjdk
 --platform=linux/amd64 openjdk:8

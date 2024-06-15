@@ -1,6 +1,5 @@
---platform=linux/amd64 kibana:5.6.12
---platform=linux/amd64 elasticsearch
---platform=linux/amd64 mobz/elasticsearch-head:5
+--platform=linux/amd64 docker.elastic.co/elasticsearch/elasticsearch:8.14.1
+--platform=linux/amd64 docker.elastic.co/kibana/kibana:8.14.1
 --platform=linux/amd64 postgres
 --platform=linux/amd64 mongo
 --platform=linux/amd64 mysql

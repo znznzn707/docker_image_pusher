@@ -14,3 +14,4 @@
 --platform=linux/amd64 nginx
 --platform=linux/amd64 debian
 --platform=linux/amd64 minio/minio
+--platform=linux/amd64 nextcloud

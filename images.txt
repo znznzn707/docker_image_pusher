@@ -15,3 +15,9 @@
 --platform=linux/amd64 debian
 --platform=linux/amd64 minio/minio
 --platform=linux/amd64 nextcloud
+--platform=linux/amd64 eclipse-temurin:8-jdk
+--platform=linux/amd64 eclipse-temurin:17-jdk
+--platform=linux/amd64 eclipse-temurin:8-jdk-alpine
+--platform=linux/amd64 eclipse-temurin:17-jdk-alpine
+--platform=linux/aarch64 eclipse-temurin:8-jdk-aarch64
+--platform=linux/aarch64 eclipse-temurin:17-jdk-aarch64

@@ -20,3 +20,4 @@
 --platform=linux/amd64 eclipse-temurin:8-jdk-alpine
 --platform=linux/amd64 eclipse-temurin:17-jdk-alpine
 --platform=linux/amd64 node:20-alpine
+--platform=linux/amd64 node:alpine

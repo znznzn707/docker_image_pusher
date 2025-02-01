@@ -17,8 +17,10 @@
 --platform=linux/amd64 nextcloud
 --platform=linux/amd64 eclipse-temurin:8-jdk
 --platform=linux/amd64 eclipse-temurin:17-jdk
+--platform=linux/amd64 eclipse-temurin:21-jdk
 --platform=linux/amd64 eclipse-temurin:8-jdk-alpine
 --platform=linux/amd64 eclipse-temurin:17-jdk-alpine
+--platform=linux/amd64 eclipse-temurin:21-jdk-alpine
 --platform=linux/amd64 node:20-alpine
 --platform=linux/amd64 node:alpine
 --platform=linux/amd64 ghcr.io/open-webui/open-webui:ollama

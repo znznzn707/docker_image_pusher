@@ -25,3 +25,4 @@
 --platform=linux/amd64 node:alpine
 --platform=linux/amd64 ghcr.io/open-webui/open-webui:ollama
 --platform=linux/amd64 ghcr.io/open-webui/open-webui:cuda
+--platform=linux/amd64 tomcat

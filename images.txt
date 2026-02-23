@@ -1,7 +1,5 @@
 --platform=linux/amd64 ollama/ollama
 --platform=linux/amd64 lobehub/lobe-chat
---platform=linux/amd64 bitnami/kafka
---platform=linux/amd64 bitnami/zookeeper
 --platform=linux/amd64 mongo
 --platform=linux/amd64 postgres
 --platform=linux/amd64 mongo

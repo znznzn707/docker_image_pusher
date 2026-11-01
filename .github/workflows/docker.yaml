@@ -5,8 +5,9 @@ on:
   push:
     branches: [ main ]
   schedule:
-    - cron: '00 00 01 * ?'
-
+    # GitHub Actions 使用 POSIX cron，不支持 Quartz 的 ?
+    # 每月 1 号 UTC 00:00 执行
+    - cron: '0 0 1 * *'
 
 env:
   ALIYUN_REGISTRY: "${{ secrets.ALIYUN_REGISTRY }}"
@@ -16,144 +17,135 @@ env:
 
 jobs:
 
-  build:
-    name: Pull
+  # 解析 images.txt，计算目标镜像名（含重名去重逻辑），产出 matrix
+  prepare:
+    name: Prepare matrix
     runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.gen.outputs.matrix }}
     steps:
-    - name: Before freeing up disk space
-      run: |
-        echo "Before freeing up disk space"
-        echo "=============================================================================="
-        df -hT
-        echo "=============================================================================="
+      - name: Checkout Code
+        uses: actions/checkout@v4
 
-    # 增加可用磁盘空间
-    - name: Maximize build space
-      uses: easimon/maximize-build-space@master
-      with:
+      - name: Build matrix from images.txt
+        id: gen
+        run: |
+          python3 - <<'PY' >> "$GITHUB_OUTPUT"
+          import json
 
-        root-reserve-mb: 2048
-        swap-size-mb: 128
-        remove-dotnet: 'true'
-        remove-haskell: 'true'
-        # 如果空间还是不够用，可以把以下开启，清理出更多空间
-        # remove-android: 'true'
-        # remove-codeql: 'true'
-        build-mount-path: '/var/lib/docker/'
+          parsed = []
+          temp = {}
+          duplicate = set()
 
-    - name: Restart docker
-      run: sudo service docker restart
+          with open('images.txt', encoding='utf-8') as f:
+              for raw in f:
+                  line = raw.strip()
+                  if not line or line.startswith('#'):
+                      continue
 
-    - name: Free up disk space complete
-      run: |
-        echo "Free up disk space complete"
-        echo "=============================================================================="
-        df -hT
-        echo "=============================================================================="
+                  parts = line.split()
+                  platform = ''
+                  if parts[0].startswith('--platform'):
+                      if '=' in parts[0]:
+                          platform = parts[0].split('=', 1)[1]
+                      else:
+                          platform = parts[1]
+                  image = parts[-1].split('@')[0]
 
-    - name: Checkout Code
-      uses: actions/checkout@v4
+                  name_tag = image.split('/')[-1]
+                  image_name = name_tag.split(':')[0]
+                  seg = image.split('/')
+                  if len(seg) == 3:
+                      namespace = seg[1]
+                  elif len(seg) == 2:
+                      namespace = seg[0]
+                  else:
+                      namespace = ''
 
-    - name: Docker Setup Buildx
-      uses: docker/setup-buildx-action@v3
+                  parsed.append({
+                      'image': image,
+                      'platform': platform,
+                      'namespace': namespace,
+                      'image_name': image_name,
+                      'name_tag': name_tag,
+                  })
 
-    - name: Build and push image Aliyun
-      run: |
-        docker login -u $ALIYUN_REGISTRY_USER -p $ALIYUN_REGISTRY_PASSWORD $ALIYUN_REGISTRY
-        # 数据预处理,判断镜像是否重名
-        declare -A duplicate_images
-        declare -A temp_map
-        while IFS= read -r line || [ -n "$line" ]; do
-            # 忽略空行与注释
-            [[ -z "$line" ]] && continue
-            if echo "$line" | grep -q '^\s*#'; then
-                continue
-            fi
-            
-            # 获取镜像的完整名称，例如kasmweb/nginx:1.25.3（命名空间/镜像名:版本号）
-            image=$(echo "$line" | awk '{print $NF}')
-            # 将@sha256:等字符删除
-            image="${image%%@*}"
-            echo "image $image"
-            # 获取镜像名:版本号  例如nginx:1.25.3
-            image_name_tag=$(echo "$image" | awk -F'/' '{print $NF}')
-            echo "image_name_tag $image_name_tag"
-            # 获取命名空间 例如kasmweb,  这里有种特殊情况 docker.io/nginx，把docker.io当成命名空间，也OK
-            name_space=$(echo "$image" | awk -F'/' '{if (NF==3) print $2; else if (NF==2) print $1; else print ""}')
-            echo "name_space: $name_space"
-            # 这里不要是空值影响判断
-            name_space="${name_space}_"
-            # 获取镜像名例如nginx
-            image_name=$(echo "$image_name_tag" | awk -F':' '{print $1}')
-            echo "image_name: $image_name"
-            
-            # 如果镜像存在于数组中，则添加temp_map
-            if [[ -n "${temp_map[$image_name]}" ]]; then
-                 # 如果temp_map已经存在镜像名，判断是不是同一命名空间
-                 if [[ "${temp_map[$image_name]}" != $name_space  ]]; then
-                    echo "duplicate image name: $image_name"
-                    duplicate_images[$image_name]="true"
-                 fi
-            else
-                # 存镜像的命名空间
-                temp_map[$image_name]=$name_space
-            fi       
-        done < images.txt
-        
-        
-        while IFS= read -r line || [ -n "$line" ]; do
-            # 忽略空行与注释
-            [[ -z "$line" ]] && continue
-            if echo "$line" | grep -q '^\s*#'; then
-                continue
-            fi
-        
-            echo "docker pull $line"
-            docker pull $line
-            platform=$(echo "$line" | awk -F'--platform[ =]' '{if (NF>1) print $2}' | awk '{print $1}')
-            echo "platform is $platform"
-            # 如果存在架构信息 将架构信息拼到镜像名称前面
-            if [ -z "$platform" ]; then
-                platform_prefix=""
-            else
-                platform_prefix="${platform//\//_}_"
-            fi
-            echo "platform_prefix is $platform_prefix"
-            # 获取镜像的完整名称，例如kasmweb/nginx:1.25.3（命名空间/镜像名:版本号）
-            image=$(echo "$line" | awk '{print $NF}')
+                  key = namespace + '_'
+                  if image_name in temp:
+                      if temp[image_name] != key:
+                          duplicate.add(image_name)
+                  else:
+                      temp[image_name] = key
 
-            # 获取 镜像名:版本号  例如nginx:1.25.3
-            image_name_tag=$(echo "$image" | awk -F'/' '{print $NF}')
-            # 获取命名空间 例如kasmweb  这里有种特殊情况 docker.io/nginx，把docker.io当成命名空间，也OK
-            name_space=$(echo "$image" | awk -F'/' '{if (NF==3) print $2; else if (NF==2) print $1; else print ""}')
-            # 获取镜像名例  例如nginx
-            image_name=$(echo "$image_name_tag" | awk -F':' '{print $1}')
-        
-            name_space_prefix=""
-            # 如果镜像名重名
-            if [[ -n "${duplicate_images[$image_name]}" ]]; then
-               #如果命名空间非空，将命名空间加到前缀
-               if [[ -n "${name_space}" ]]; then
-                  name_space_prefix="${name_space}_"
-               fi
-            fi
-            
-            # 将@sha256:等字符删除
-            image_name_tag="${image_name_tag%%@*}"
-            new_image="$ALIYUN_REGISTRY/$ALIYUN_NAME_SPACE/$platform_prefix$name_space_prefix$image_name_tag"
-            echo "docker tag $image $new_image"
-            docker tag $image $new_image
-            echo "docker push $new_image"
-            docker push $new_image
-            echo "开始清理磁盘空间"
-            echo "=============================================================================="
-            df -hT
-            echo "=============================================================================="
-            docker rmi $image
-            docker rmi $new_image
-            echo "磁盘空间清理完毕"
-            echo "=============================================================================="
-            df -hT
-            echo "=============================================================================="     
-            
-        done < images.txt
+          include = []
+          for item in parsed:
+              prefix = ''
+              if item['platform']:
+                  prefix += item['platform'].replace('/', '_') + '_'
+              if item['image_name'] in duplicate and item['namespace']:
+                  prefix += item['namespace'] + '_'
+              include.append({
+                  'image': item['image'],
+                  'platform': item['platform'],
+                  'target': prefix + item['name_tag'],
+              })
+
+          print('matrix=' + json.dumps({'include': include}))
+          PY
+
+      - name: Show matrix
+        run: echo '${{ steps.gen.outputs.matrix }}' | python3 -m json.tool
+
+  # 用 skopeo 从源 registry 流式复制到阿里云，不落地本地 docker 存储
+  mirror:
+    name: Mirror ${{ matrix.image }}
+    needs: prepare
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      max-parallel: 3
+      matrix: ${{ fromJson(needs.prepare.outputs.matrix) }}
+    steps:
+      - name: Install skopeo
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq skopeo
+
+      - name: Login to Aliyun registry
+        run: |
+          echo "$ALIYUN_REGISTRY_PASSWORD" | skopeo login \
+            -u "$ALIYUN_REGISTRY_USER" \
+            --password-stdin "$ALIYUN_REGISTRY"
+
+      - name: Copy ${{ matrix.image }}
+        env:
+          SRC_IMAGE: ${{ matrix.image }}
+          PLATFORM: ${{ matrix.platform }}
+          TARGET_NAME: ${{ matrix.target }}
+        run: |
+          set -euo pipefail
+          SRC="docker://${SRC_IMAGE}"
+          DST="docker://${ALIYUN_REGISTRY}/${ALIYUN_NAME_SPACE}/${TARGET_NAME}"
+
+          echo "SRC: ${SRC}"
+          echo "DST: ${DST}"
+
+          if [ -n "${PLATFORM}" ]; then
+            OS_="${PLATFORM%%/*}"
+            ARCH_="${PLATFORM##*/}"
+            echo "single-arch: os=${OS_} arch=${ARCH_}"
+            skopeo copy --retry-times 3 \
+              --override-os "${OS_}" --override-arch "${ARCH_}" \
+              "${SRC}" "${DST}"
+          else
+            echo "multi-arch: --all"
+            # 目标仓库不支持 OCI index 时回退到 amd64
+            skopeo copy --all --retry-times 3 "${SRC}" "${DST}" \
+              || skopeo copy --retry-times 3 \
+                   --override-os linux --override-arch amd64 \
+                   "${SRC}" "${DST}"
+          fi
+
+      - name: Disk usage after copy
+        if: always()
+        run: df -hT /
